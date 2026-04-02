@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 小灵 · AI 访谈
 
-## Getting Started
+基于 Next.js + SQLite + MiniMax 的访谈系统。当前权限模型：
 
-First, run the development server:
+- **普通用户**：只能登录、参与访谈、查看自己的会话。
+- **管理员**：进入 `/admin` 管理用户，查看全员会话，并导出全部数据。
+- **导出权限**：仅管理员可导出（普通用户无导出按钮，API 也会 403）。
+
+## 快速开始（本机）
 
 ```bash
+npm install
+cp .env.example .env
+npx prisma migrate dev
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+浏览器打开 `http://localhost:3000`。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 首个管理员账号
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+在 `.env` 里配置：
 
-## Learn More
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=请换成你自己的强密码
+```
 
-To learn more about Next.js, take a look at the following resources:
+然后在登录页用这组账号密码登录：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- 如果数据库里还没有这个用户名，会**自动创建**该管理员账号。
+- 创建后可进入 `/admin`。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 管理员功能
 
-## Deploy on Vercel
+`/admin` 页面支持：
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- 创建普通用户或管理员账号
+- 查看所有用户列表
+- 按用户查看会话列表
+- 导出某个用户全部会话（ZIP）
+- 导出全站所有会话（ZIP）
+- 导出任意单场会话（Markdown）
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 环境变量
+
+| 变量 | 说明 |
+|---|---|
+| `DATABASE_URL` | 默认 `file:./prisma/dev.db` |
+| `SESSION_PASSWORD` | 生产必填，至少 32 字符 |
+| `ADMIN_USERNAME` | 固定管理员用户名，默认 `admin` |
+| `ADMIN_PASSWORD` | 固定管理员密码（建议强密码） |
+| `COOKIE_SECURE` | HTTPS 场景建议 `true`；本机 http 请用 `false` 或不设置 |
+| `MINIMAX_API_KEY` | MiniMax 密钥 |
+| `MINIMAX_BASE_URL` | 国内默认 `https://api.minimaxi.com/v1` |
+| `MINIMAX_MODEL` | 如 `MiniMax-M2.1` / `MiniMax-M2.7` |
+
+## 外网部署关键点
+
+1. 使用 HTTPS（Nginx/Caddy 反代）
+2. 生产 `.env` 设置：`SESSION_PASSWORD`、`ADMIN_PASSWORD`、`COOKIE_SECURE=true`
+3. 启动：`npm run build && HOSTNAME=0.0.0.0 PORT=3000 npm start`
+
+## 备注
+
+- 旧数据若 `userId` 为空，不属于任何账号，不会出现在普通用户列表里。
+- `middleware` 在 Next.js 16 提示将迁移为 `proxy`，目前不影响运行，后续可按官方建议迁移。

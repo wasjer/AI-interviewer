@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  /// ADMIN | USER
+  role         String    @default("USER")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[]
+}
+
+model Session {
+  id                 String    @id @default(cuid())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  userId             String?
+  user               User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// JSON array of module ids 0-7, e.g. [0,3,1,2,4,5,6,7]
+  moduleOrder        String
+  /// Index into moduleOrder for the active module
+  modulePhaseIndex   Int       @default(0)
+  /// LLM assistant turns in the current module (not counting canned opener)
+  followUpsInModule  Int       @default(0)
+  /// IN_PROGRESS | COMPLETED
+  status             String    @default("IN_PROGRESS")
+  messages           Message[]
+
+  @@index([userId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  moduleId  Int
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
