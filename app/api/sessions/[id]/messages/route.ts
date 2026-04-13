@@ -10,6 +10,7 @@ import {
 import { getModule } from "@/lib/modules";
 import { minimaxChat } from "@/lib/minimax";
 import { requireLogin } from "@/lib/guards";
+import { enqueueSeedJobForSession, processPendingSeedJobsForUser } from "@/lib/seed-generator";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -140,6 +141,13 @@ export async function POST(req: Request, ctx: RouteCtx) {
       },
     });
   });
+
+  if (shouldComplete) {
+    // 非阻塞：先入队，再在当前进程尝试消费一轮
+    void enqueueSeedJobForSession(id, user.id).then(() => {
+      void processPendingSeedJobsForUser(user.id);
+    });
+  }
 
   const sessionOut = await prisma.session.findFirst({
     where: { id, userId: user.id },

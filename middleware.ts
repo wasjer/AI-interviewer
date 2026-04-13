@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
     const session = await getIronSession<SessionData>(
       request,
       response,
-      getSessionOptionsForMiddleware(),
+      getSessionOptionsForMiddleware(request),
     );
     if (!session.userId) {
       const url = request.nextUrl.clone();

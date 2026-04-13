@@ -16,6 +16,8 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   sessions     Session[]
+  seedProfiles SeedProfile[]
+  seedJobs     SeedJob[]
 }
 
 model Session {
@@ -33,6 +35,7 @@ model Session {
   /// IN_PROGRESS | COMPLETED
   status             String    @default("IN_PROGRESS")
   messages           Message[]
+  seedJobs           SeedJob[]
 
   @@index([userId])
 }
@@ -47,4 +50,39 @@ model Message {
   createdAt DateTime @default(now())
 
   @@index([sessionId])
+}
+
+model SeedProfile {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version            Int      @default(1)
+  generatedAt        DateTime @default(now())
+  basicInfo          Json
+  soulSeed           Json
+  eventsSeed         Json
+  sourceSessionIds   Json
+  sourceSessionCount Int      @default(1)
+
+  @@index([userId])
+  @@unique([userId, version])
+}
+
+model SeedJob {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId  String   @unique
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  /// PENDING | PROCESSING | COMPLETED | FAILED
+  status     String   @default("PENDING")
+  attempts   Int      @default(0)
+  lastError  String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([createdAt])
 }

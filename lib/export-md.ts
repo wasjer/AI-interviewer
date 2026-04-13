@@ -4,19 +4,33 @@ import { getModule } from "@/lib/modules";
 export function buildExportMarkdown(session: Session & { messages: Message[] }): string {
   const order = JSON.parse(session.moduleOrder) as number[];
   const lines: string[] = [];
+  const chronological = [...session.messages].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+  );
+  const completedModules = [...new Set(chronological.map((m) => m.moduleId))];
+  const durationMin = Math.max(
+    0,
+    Math.round((session.updatedAt.getTime() - session.createdAt.getTime()) / 60000),
+  );
 
+  lines.push(`---`);
+  lines.push(`session_id: ${session.id}`);
+  lines.push(`user_id: ${session.userId ?? "unknown"}`);
+  lines.push(`status: ${session.status}`);
+  lines.push(`completed_at: ${session.updatedAt.toISOString()}`);
+  lines.push(`modules_completed: [${completedModules.join(", ")}]`);
+  lines.push(`interview_duration_minutes: ${durationMin}`);
+  lines.push(`---`);
+  lines.push(``);
   lines.push(`# 访谈记录`);
   lines.push(``);
   lines.push(`- 会话 ID：${session.id}`);
+  lines.push(`- 用户 ID：${session.userId ?? "unknown"}`);
   lines.push(`- 开始时间：${session.createdAt.toISOString()}`);
   lines.push(`- 结束/更新时间：${session.updatedAt.toISOString()}`);
   lines.push(`- 状态：${session.status}`);
   lines.push(`- 模块顺序：${order.join(" → ")}`);
   lines.push(``);
-
-  const chronological = [...session.messages].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-  );
 
   const sectionOrder: number[] = [];
   const seen = new Set<number>();

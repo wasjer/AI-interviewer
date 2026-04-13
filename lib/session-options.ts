@@ -1,4 +1,6 @@
 import type { SessionOptions } from "iron-session";
+import { headers } from "next/headers";
+import type { NextRequest } from "next/server";
 
 export const SESSION_COOKIE_NAME = "interviewer_session";
 
@@ -14,11 +16,26 @@ export function getRawSessionPassword(): string {
   );
 }
 
-export function getSessionOptions(): SessionOptions {
-  const secure =
-    process.env.COOKIE_SECURE === "true" ||
-    (process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false");
+export function isHttpsFromForwardedProto(
+  header: string | null | undefined,
+): boolean {
+  if (!header) return false;
+  return header.split(",")[0].trim().toLowerCase() === "https";
+}
 
+/**
+ * 开发环境下：若反代声明 HTTPS（如 Cloudflare Tunnel 的 x-forwarded-proto），
+ * 自动使用 Secure Cookie，避免手机浏览器在 https 站点丢弃会话。
+ */
+export function resolveCookieSecure(clientAppearsHttps: boolean): boolean {
+  if (process.env.COOKIE_SECURE === "false") return false;
+  if (process.env.COOKIE_SECURE === "true") return true;
+  if (process.env.NODE_ENV === "production") return true;
+  return clientAppearsHttps;
+}
+
+export function buildSessionOptions(clientAppearsHttps: boolean): SessionOptions {
+  const secure = resolveCookieSecure(clientAppearsHttps);
   return {
     password: getRawSessionPassword(),
     cookieName: SESSION_COOKIE_NAME,
@@ -32,6 +49,17 @@ export function getSessionOptions(): SessionOptions {
   };
 }
 
-export function getSessionOptionsForMiddleware(): SessionOptions {
-  return getSessionOptions();
+export function getSessionOptionsForMiddleware(
+  request: NextRequest,
+): SessionOptions {
+  return buildSessionOptions(
+    isHttpsFromForwardedProto(request.headers.get("x-forwarded-proto")),
+  );
+}
+
+export async function getSessionOptionsForRoute(): Promise<SessionOptions> {
+  const h = await headers();
+  return buildSessionOptions(
+    isHttpsFromForwardedProto(h.get("x-forwarded-proto")),
+  );
 }

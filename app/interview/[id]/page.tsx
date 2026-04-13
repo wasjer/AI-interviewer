@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getModule } from "@/lib/modules";
+import AnimatedHello from "@/components/AnimatedHello";
 
 type ApiMessage = {
   id: string;
@@ -30,7 +30,9 @@ export default function InterviewPage() {
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [pendingUserMsg, setPendingUserMsg] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -47,13 +49,11 @@ export default function InterviewPage() {
     }
   }, [id]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session?.messages.length]);
+  }, [session?.messages.length, pendingUserMsg]);
 
   async function send() {
     const text = input.trim();
@@ -61,6 +61,8 @@ export default function InterviewPage() {
     setSending(true);
     setError(null);
     setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    setPendingUserMsg(text);
     try {
       const res = await fetch(`/api/sessions/${id}/messages`, {
         method: "POST",
@@ -69,123 +71,217 @@ export default function InterviewPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        const msg =
-          typeof data.message === "string"
-            ? data.message
-            : typeof data.error === "string"
-              ? data.error
-              : "发送失败";
+        const msg = typeof data.message === "string" ? data.message
+          : typeof data.error === "string" ? data.error : "发送失败";
         throw new Error(msg);
       }
       setSession((data as { session: ApiSession }).session);
     } catch (e) {
       setError(e instanceof Error ? e.message : "发送失败");
+      setInput(text);
     } finally {
       setSending(false);
+      setPendingUserMsg(null);
     }
   }
 
-  const order = session ? (JSON.parse(session.moduleOrder) as number[]) : [];
-  const currentModuleId =
-    session && order.length > 0 ? order[session.modulePhaseIndex] ?? order[0]! : 0;
-  const currentTitle = session ? getModule(currentModuleId).title : "";
-
   if (!id) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-10">
-        <p className="text-sm text-neutral-500">无效的链接</p>
+      <main className="flex min-h-screen items-center justify-center" style={{ background: "#f5f4ed" }}>
+        <p className="text-sm" style={{ color: "#87867f" }}>无效的链接</p>
       </main>
     );
   }
 
+  const isCompleted = session?.status === "COMPLETED";
+  const displayMessages = session?.messages ?? [];
+
   return (
-    <main className="mx-auto flex min-h-0 flex-1 w-full max-w-2xl flex-col px-4 py-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 pb-4 dark:border-neutral-800">
-        <div>
-          <Link href="/" className="text-sm text-neutral-500 hover:underline">
-            ← 返回列表
-          </Link>
-          <h1 className="mt-1 text-lg font-semibold">访谈进行中</h1>
-          {session ? (
-            <p className="text-xs text-neutral-500">
-              当前模块：{currentTitle}（{session.status === "COMPLETED" ? "已完成" : "进行中"}）
-            </p>
-          ) : null}
-        </div>
-        <p className="text-xs text-neutral-500">导出由管理员在后台统一处理</p>
+    <div className="flex h-screen flex-col" style={{ background: "#f5f4ed" }}>
+
+      {/* Header — Near Black with warm silver text */}
+      <header
+        className="flex shrink-0 items-center gap-3 px-4 py-3.5"
+        style={{ background: "#141413", borderBottom: "1px solid #30302e" }}
+      >
+        <Link
+          href="/"
+          className="text-sm transition"
+          style={{ color: "#87867f" }}
+          aria-label="返回列表"
+        >
+          ←
+        </Link>
+        <h1 className="flex-1 text-center">
+          <AnimatedHello
+            style={{ fontFamily: "Georgia, serif", fontSize: "16px", fontWeight: 500, color: "#faf9f5" }}
+          />
+        </h1>
+        <span className="w-5" />
       </header>
 
       {error ? (
-        <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+        <div className="shrink-0 px-4 py-2 text-sm" style={{ background: "#fdf2f2", color: "#b53333" }}>
           {error}
-        </p>
+        </div>
       ) : null}
 
-      {loading ? (
-        <p className="text-sm text-neutral-500">加载中…</p>
-      ) : !session ? (
-        <p className="text-sm text-neutral-500">未找到会话</p>
-      ) : (
-        <>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4">
-            {session.messages.map((m) => (
-              <article
-                key={m.id}
-                className={`rounded-xl px-3 py-2 text-sm leading-relaxed ${
-                  m.role === "user"
-                    ? "ml-6 bg-neutral-100 dark:bg-neutral-800"
-                    : "mr-6 border border-neutral-200 dark:border-neutral-700"
-                }`}
-              >
-                <p className="mb-1 text-xs font-medium text-neutral-500">
-                  {m.role === "user" ? "受访者" : "小灵"} · 模块 {m.moduleId}
-                </p>
-                <p className="whitespace-pre-wrap">{m.content}</p>
-              </article>
-            ))}
+      {/* Message list */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+        {loading ? (
+          <p className="text-center text-sm" style={{ color: "#87867f" }}>加载中…</p>
+        ) : !session ? (
+          <p className="text-center text-sm" style={{ color: "#87867f" }}>未找到会话</p>
+        ) : (
+          <div className="space-y-4">
+            {displayMessages.map((m) =>
+              m.role === "user" ? (
+                /* User bubble — right, warm sand with terracotta ring */
+                <div key={m.id} className="flex justify-end">
+                  <div
+                    className="max-w-[75%] px-4 py-3"
+                    style={{
+                      background: "#e8e6dc",
+                      borderRadius: "16px 4px 16px 16px",
+                      boxShadow: "0px 0px 0px 1px #d1cfc5",
+                      color: "#141413",
+                      fontSize: "20px",
+                      lineHeight: "1.5",
+                    }}
+                  >
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                  </div>
+                </div>
+              ) : (
+                /* AI bubble — left, ivory with border cream */
+                <div key={m.id} className="flex justify-start">
+                  <div
+                    className="max-w-[75%] px-4 py-3"
+                    style={{
+                      background: "#faf9f5",
+                      border: "1px solid #f0eee6",
+                      borderRadius: "4px 16px 16px 16px",
+                      boxShadow: "rgba(0,0,0,0.05) 0px 2px 12px",
+                      color: "#141413",
+                      fontSize: "20px",
+                      lineHeight: "1.5",
+                    }}
+                  >
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* Optimistic user bubble */}
+            {pendingUserMsg ? (
+              <div className="flex justify-end">
+                <div
+                  className="max-w-[75%] px-4 py-3"
+                  style={{
+                    background: "#e8e6dc",
+                    borderRadius: "16px 4px 16px 16px",
+                    boxShadow: "0px 0px 0px 1px #d1cfc5",
+                    color: "#141413",
+                    fontSize: "20px",
+                    lineHeight: "1.5",
+                    opacity: 0.7,
+                  }}
+                >
+                  <p className="whitespace-pre-wrap">{pendingUserMsg}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {/* AI typing indicator */}
+            {sending ? (
+              <div className="flex justify-start">
+                <div
+                  className="px-5 py-4"
+                  style={{
+                    background: "#faf9f5",
+                    border: "1px solid #f0eee6",
+                    borderRadius: "4px 16px 16px 16px",
+                    boxShadow: "rgba(0,0,0,0.05) 0px 2px 12px",
+                  }}
+                >
+                  <span className="flex gap-1.5 items-center">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full animate-bounce"
+                      style={{ background: "#87867f", animationDelay: "0ms" }}
+                    />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full animate-bounce"
+                      style={{ background: "#87867f", animationDelay: "160ms" }}
+                    />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full animate-bounce"
+                      style={{ background: "#87867f", animationDelay: "320ms" }}
+                    />
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
             <div ref={bottomRef} />
           </div>
+        )}
+      </div>
 
+      {/* Input bar */}
+      {!loading && session ? (
+        <div
+          className="shrink-0 px-4 py-3"
+          style={{ background: "#faf9f5", borderTop: "1px solid #e8e6dc" }}
+        >
           <form
-            className="sticky bottom-0 border-t border-neutral-200 bg-[var(--background)] pt-4 dark:border-neutral-800"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void send();
-            }}
+            className="flex items-end gap-3"
+            onSubmit={(e) => { e.preventDefault(); void send(); }}
           >
-            <label className="sr-only" htmlFor="msg">
-              回复
-            </label>
             <textarea
-              id="msg"
-              rows={3}
+              ref={textareaRef}
+              rows={1}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
+              }}
               onKeyDown={(e) => {
                 if (e.key !== "Enter" || e.shiftKey) return;
                 e.preventDefault();
                 void send();
               }}
-              disabled={sending || session.status === "COMPLETED"}
-              placeholder={
-                session.status === "COMPLETED"
-                  ? "访谈已结束"
-                  : "输入你的回答…（Enter 发送，Shift+Enter 换行）"
-              }
-              className="w-full resize-none rounded-xl border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none ring-neutral-400 focus:ring-2 dark:border-neutral-600"
+              disabled={sending || isCompleted}
+              placeholder={isCompleted ? "访谈已结束" : "建议使用豆包语音输入法"}
+              className="min-h-[44px] flex-1 resize-none overflow-hidden text-sm"
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e8e6dc",
+                borderRadius: "12px",
+                padding: "10px 14px",
+                color: "#141413",
+                outline: "none",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = "#3898ec")}
+              onBlur={(e) => (e.target.style.borderColor = "#e8e6dc")}
             />
-            <div className="mt-2 flex justify-end">
-              <button
-                type="submit"
-                disabled={sending || session.status === "COMPLETED" || !input.trim()}
-                className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-              >
-                {sending ? "发送中…" : "发送"}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={sending || isCompleted || !input.trim()}
+              className="shrink-0 rounded-xl px-5 py-2.5 text-sm font-semibold transition"
+              style={{
+                background: sending || isCompleted || !input.trim() ? "#d4856a" : "#c96442",
+                color: "#faf9f5",
+                opacity: sending || isCompleted || !input.trim() ? 0.5 : 1,
+              }}
+            >
+              发送
+            </button>
           </form>
-        </>
-      )}
-    </main>
+        </div>
+      ) : null}
+
+    </div>
   );
 }

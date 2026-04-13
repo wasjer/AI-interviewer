@@ -1,7 +1,7 @@
 import { getIronSession, type IronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
-import { getSessionOptions } from "@/lib/session-options";
+import { getSessionOptionsForRoute } from "@/lib/session-options";
 
 export type SessionPayload = {
   userId?: string;
@@ -10,7 +10,10 @@ export type SessionPayload = {
 };
 
 export async function getAppSession(): Promise<IronSession<SessionPayload>> {
-  return getIronSession<SessionPayload>(await cookies(), getSessionOptions());
+  return getIronSession<SessionPayload>(
+    await cookies(),
+    await getSessionOptionsForRoute(),
+  );
 }
 
 export async function getSessionUser() {
