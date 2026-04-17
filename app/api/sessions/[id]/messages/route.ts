@@ -14,6 +14,18 @@ import { enqueueSeedJobForSession, processPendingSeedJobsForUser } from "@/lib/s
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
+const FEEDBACK_TRIGGER_TURNS = 15;
+
+// 触发收集反馈时注入的提示
+const FEEDBACK_REQUEST_HINT = `
+
+（特别提示：在自然回应用户本轮内容之后，请以轻松真诚的语气顺带提一个小问题：邀请用户为这次聊天打个分，0分是完全浪费时间、不知所云、聊完心情糟透了，10分是舒服惬意、时间不知不觉就过去了、聊天同时也整理了思绪、意犹未尽。同时请他们说说对这个工具有什么建议。说明这纯粹是你个人的好奇，语气要像朋友随口一问，不要打断访谈的气氛，不要生硬。不需要输出任何模块标记。）`;
+
+// 用户回复反馈后，AI 致谢并自然接回访谈
+const FEEDBACK_ACK_HINT = `
+
+（特别提示：用户刚刚回复了对这次聊天的评分和建议。请用 1-2 句话真诚致谢，然后自然地衔接回刚才的访谈话题，继续正常的访谈节奏，不要提任何模块标记。）`;
+
 export async function POST(req: Request, ctx: RouteCtx) {
   const { user, response } = await requireLogin();
   if (!user) return response;
@@ -64,17 +76,15 @@ export async function POST(req: Request, ctx: RouteCtx) {
   }
 
   const order = parseModuleOrder(session.moduleOrder);
+  const newTotalTurns = session.totalUserTurns + 1;
 
   // ── 延迟模块推进路径 ──────────────────────────────────────────────────────
-  // AI 已结束上一模块，先保存用户的最后一条回答，再让 LLM 做一次自然承接，
-  // 然后追加下一模块的开场白。
   if (session.pendingModuleAdvance) {
     const currentModuleId = getCurrentModuleId(order, session.modulePhaseIndex);
     const newPhaseIndex = session.modulePhaseIndex + 1;
     const nextModuleId = getCurrentModuleId(order, newPhaseIndex);
     const opener = getModule(nextModuleId).cannedOpener;
 
-    // 先把用户的最后回答写入 DB，供 LLM 读取
     for (const c of contents) {
       await prisma.message.create({
         data: { sessionId: id, role: "user", content: c, moduleId: currentModuleId },
@@ -87,7 +97,6 @@ export async function POST(req: Request, ctx: RouteCtx) {
     });
     if (!afterUser) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-    // 调 LLM：用专属提示让它简短回应用户的最后答案并收尾，不提新问题
     const wrapUpHint = "\n\n（提示：用户已回答了本模块的最后一个问题。请用 1-2 句话真诚回应并自然收尾，不要再提任何新问题，也不需要输出模块标记。）";
     const turnInput = buildMessagesForMiniMax(
       afterUser.messages,
@@ -119,6 +128,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
           modulePhaseIndex: newPhaseIndex,
           followUpsInModule: 0,
           pendingModuleAdvance: false,
+          totalUserTurns: newTotalTurns,
         },
       });
     });
@@ -137,10 +147,69 @@ export async function POST(req: Request, ctx: RouteCtx) {
     });
   }
 
+  // ── 满意度反馈收集路径 ────────────────────────────────────────────────────
+  // 用户刚回复了评分和建议，AI 致谢并自然接回访谈
+  if (session.feedbackPending) {
+    const currentModuleId = getCurrentModuleId(order, session.modulePhaseIndex);
+
+    for (const c of contents) {
+      await prisma.message.create({
+        data: { sessionId: id, role: "user", content: c, moduleId: currentModuleId },
+      });
+    }
+
+    const afterUser = await prisma.session.findFirst({
+      where: { id, userId: user.id },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    if (!afterUser) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+    const turnInput = buildMessagesForMiniMax(
+      afterUser.messages,
+      currentModuleId,
+      afterUser.followUpsInModule,
+      FEEDBACK_ACK_HINT,
+    );
+
+    let raw: string;
+    try {
+      raw = await minimaxChat(turnInput);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "unknown_error";
+      return NextResponse.json({ error: "minimax_failed", message: msg }, { status: 502 });
+    }
+
+    const { cleaned } = stripControlMarkers(raw);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.message.create({
+        data: { sessionId: id, role: "assistant", content: cleaned, moduleId: currentModuleId },
+      });
+      await tx.session.update({
+        where: { id },
+        data: {
+          feedbackPending: false,
+          feedbackCollected: true,
+          totalUserTurns: newTotalTurns,
+          // 反馈轮次不计入模块追问次数
+        },
+      });
+    });
+
+    const sessionOut = await prisma.session.findFirst({
+      where: { id, userId: user.id },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+
+    return NextResponse.json({
+      assistantMessages: [{ content: cleaned, moduleId: currentModuleId }],
+      session: sessionOut,
+    });
+  }
+
   // ── 正常流程 ──────────────────────────────────────────────────────────────
   const currentModuleId = getCurrentModuleId(order, session.modulePhaseIndex);
 
-  // 保存所有草稿消息
   for (const c of contents) {
     await prisma.message.create({
       data: { sessionId: id, role: "user", content: c, moduleId: currentModuleId },
@@ -156,10 +225,20 @@ export async function POST(req: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  // 判断是否在本轮触发满意度收集
+  // 条件：达到触发轮次、尚未收集、不在收尾模块（收尾模块氛围不合适插入）
+  const shouldAskFeedback =
+    newTotalTurns >= FEEDBACK_TRIGGER_TURNS &&
+    !session.feedbackCollected &&
+    currentModuleId !== 7;
+
+  const extraHint = shouldAskFeedback ? FEEDBACK_REQUEST_HINT : undefined;
+
   const turnInput = buildMessagesForMiniMax(
     afterUser.messages,
     currentModuleId,
     afterUser.followUpsInModule,
+    extraHint,
   );
 
   let raw: string;
@@ -226,6 +305,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
         followUpsInModule,
         status,
         pendingModuleAdvance,
+        totalUserTurns: newTotalTurns,
+        // 若本轮触发了反馈收集，设置等待标志
+        feedbackPending: shouldAskFeedback ? true : session.feedbackPending,
       },
     });
   });

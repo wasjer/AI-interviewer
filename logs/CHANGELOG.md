@@ -6,6 +6,44 @@
 
 ## 2026-04-17
 
+### [12] 草稿持久化到 localStorage
+
+**问题**：用户添加草稿后退出或刷新页面，草稿全部丢失，只保留了已提交的消息。
+
+**改动目标**：草稿写入 `localStorage`，刷新或关闭页面后重新打开自动恢复，提交成功或手动删完后才清除。
+
+**涉及文件**：
+| 文件 | 改动说明 |
+|------|----------|
+| `app/interview/[id]/page.tsx` | `drafts` 初始化时从 `localStorage` 读取；新增 `useEffect` 监听变化同步写入；草稿为空时自动删除 key |
+
+**回溯方法**：删除 `draftsKey` 变量、`localStorage` 初始化逻辑和同步 `useEffect`，将 `useState<Draft[]>` 改回 `useState<Draft[]>([])`
+
+---
+
+### [11] 用户满意度反馈收集
+
+**需求**：在用户回答 15 个问题后、访谈结束前，自然地收集评分（0-10 分）和改进建议。
+
+**改动目标**：
+- 第 15 次提交时，LLM 回应内容后顺带以朋友式语气询问评分和建议
+- 用户回复后，LLM 真诚致谢并自然接回访谈
+- 反馈轮次不计入模块追问次数，不影响访谈进度
+- 收尾模块（module 7）不触发，每次 session 只触发一次
+
+**涉及文件**：
+| 文件 | 改动说明 |
+|------|----------|
+| `prisma/schema.prisma` | `Session` 表新增 `totalUserTurns Int`、`feedbackPending Boolean`、`feedbackCollected Boolean` |
+| `prisma/migrations/20260417035313_add_feedback_fields/migration.sql` | 自动生成的迁移文件 |
+| `app/api/sessions/[id]/messages/route.ts` | 新增 `feedbackPending` 路径（致谢并接回访谈）；正常路径在第 15 轮注入反馈收集提示并设 `feedbackPending = true` |
+
+**回溯方法**：
+- 删除 schema 中三个新字段，执行 `npx prisma migrate dev --name remove_feedback_fields`
+- `messages/route.ts`：删除 `feedbackPending` 分支、`shouldAskFeedback` 逻辑和两个提示词常量
+
+---
+
 ### [10] 各模块开场白改为小问题
 
 **问题**：原开场白一次抛出多个维度（如「从童年开始，包括成长环境、求学经历、重要人际关系……」），问题太宏大，用户不知从何说起。

@@ -35,7 +35,16 @@ export default function InterviewPage() {
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const draftsKey = id ? `drafts-${id}` : null;
+  const [drafts, setDrafts] = useState<Draft[]>(() => {
+    if (!id || typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem(`drafts-${id}`);
+      return saved ? (JSON.parse(saved) as Draft[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isHolding, setIsHolding] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -59,6 +68,16 @@ export default function InterviewPage() {
   }, [id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // 草稿持久化到 localStorage，刷新或关闭页面后恢复
+  useEffect(() => {
+    if (!draftsKey) return;
+    if (drafts.length === 0) {
+      localStorage.removeItem(draftsKey);
+    } else {
+      localStorage.setItem(draftsKey, JSON.stringify(drafts));
+    }
+  }, [drafts, draftsKey]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
