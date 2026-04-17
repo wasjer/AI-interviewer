@@ -36,13 +36,14 @@ export function buildMessagesForMiniMax(
   dbMessages: Message[],
   moduleId: number,
   followUpsInModule: number,
+  extraHint?: string,
 ): OpenAIStyleMessage[] {
   const followHint =
     followUpsInModule >= MAX_LLM_TURNS_PER_MODULE - 1
       ? "\n\n（提示：本模块对话轮次已较多，请在本轮自然收尾，并按要求输出模块结束标记。）"
       : "";
 
-  const system = `${INTERVIEWER_BASE_SYSTEM}\n\n---\n${moduleFocusLine(moduleId)}${followHint}`;
+  const system = `${INTERVIEWER_BASE_SYSTEM}\n\n---\n${moduleFocusLine(moduleId)}${followHint}${extraHint ?? ""}`;
 
   const out: OpenAIStyleMessage[] = [{ role: "system", content: system }];
 

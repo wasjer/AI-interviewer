@@ -39,6 +39,15 @@ export async function POST() {
     );
   }
 
+  // 普通用户只允许一个访谈，已有则直接返回
+  const existing = await prisma.session.findFirst({
+    where: { userId: user.id },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (existing) {
+    return NextResponse.json({ session: existing });
+  }
+
   const order = buildModuleOrder();
   const firstModuleId = order[0]!;
   const opener = getModule(firstModuleId).cannedOpener;

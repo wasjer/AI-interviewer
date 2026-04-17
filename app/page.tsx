@@ -114,76 +114,45 @@ export default function Home() {
         </div>
       ) : null}
 
-      <div className="flex-1 px-5 py-6 space-y-6">
-        {/* New session */}
-        <button
-          type="button"
-          onClick={() => void createSession()}
-          disabled={creating}
-          className="w-full rounded-xl py-3.5 text-sm font-semibold transition"
-          style={{
-            background: creating ? "#d4856a" : "#c96442",
-            color: "#faf9f5",
-            boxShadow: "rgba(201,100,66,0.25) 0px 4px 16px",
-          }}
-        >
-          {creating ? "正在创建…" : "新建访谈"}
-        </button>
-
-        {/* Session list */}
-        <div>
-          <p
-            className="mb-3 text-xs font-medium uppercase tracking-widest"
-            style={{ color: "#87867f", letterSpacing: "0.08em" }}
-          >
-            最近访谈
-          </p>
-          {loading ? (
-            <p className="py-8 text-center text-sm" style={{ color: "#87867f" }}>加载中…</p>
-          ) : sessions.length === 0 ? (
-            <p className="py-8 text-center text-sm" style={{ color: "#87867f" }}>
-              暂无记录，点击「新建访谈」开始
-            </p>
-          ) : (
-            <ul
-              className="overflow-hidden rounded-2xl"
+      <div className="flex-1 px-5 py-6">
+        {loading ? (
+          <p className="py-8 text-center text-sm" style={{ color: "#87867f" }}>加载中…</p>
+        ) : sessions.length > 0 ? (
+          /* 已有访谈 → 直接跳转，不允许再新建 */
+          <div className="space-y-3">
+            <Link
+              href={`/interview/${sessions[0]!.id}`}
+              className="block w-full rounded-xl py-3.5 text-center text-sm font-semibold transition"
               style={{
-                background: "#faf9f5",
-                border: "1px solid #f0eee6",
-                boxShadow: "rgba(0,0,0,0.05) 0px 4px 24px",
+                background: "#c96442",
+                color: "#faf9f5",
+                boxShadow: "rgba(201,100,66,0.25) 0px 4px 16px",
               }}
             >
-              {sessions.map((s, i) => (
-                <li
-                  key={s.id}
-                  className="flex items-center justify-between px-5 py-4"
-                  style={i !== sessions.length - 1 ? { borderBottom: "1px solid #f0eee6" } : {}}
-                >
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: "#141413" }}>
-                      访谈 {s.id.slice(0, 8)}
-                    </p>
-                    <p className="mt-0.5 text-xs" style={{ color: "#87867f" }}>
-                      {new Date(s.updatedAt).toLocaleString()} ·{" "}
-                      {s.status === "COMPLETED" ? "已完成" : "进行中"}
-                    </p>
-                  </div>
-                  <Link
-                    href={`/interview/${s.id}`}
-                    className="rounded-lg px-4 py-1.5 text-xs font-medium transition"
-                    style={{
-                      background: "#e8e6dc",
-                      color: "#4d4c48",
-                      boxShadow: "0px 0px 0px 1px #d1cfc5",
-                    }}
-                  >
-                    打开
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+              继续访谈
+            </Link>
+            <p className="text-center text-xs" style={{ color: "#b0aea5" }}>
+              {sessions[0]!.status === "COMPLETED" ? "访谈已完成" : "上次访谈进行中"}
+              {" · "}
+              {new Date(sessions[0]!.updatedAt).toLocaleString()}
+            </p>
+          </div>
+        ) : (
+          /* 从未访谈 → 新建 */
+          <button
+            type="button"
+            onClick={() => void createSession()}
+            disabled={creating}
+            className="w-full rounded-xl py-3.5 text-sm font-semibold transition"
+            style={{
+              background: creating ? "#d4856a" : "#c96442",
+              color: "#faf9f5",
+              boxShadow: "rgba(201,100,66,0.25) 0px 4px 16px",
+            }}
+          >
+            {creating ? "正在创建…" : "新建访谈"}
+          </button>
+        )}
       </div>
     </div>
   );

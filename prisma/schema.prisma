@@ -34,6 +34,8 @@ model Session {
   followUpsInModule  Int       @default(0)
   /// IN_PROGRESS | COMPLETED
   status             String    @default("IN_PROGRESS")
+  /// AI 已输出 [[NEXT_MODULE]] 但等待用户下一条消息后再展示下一模块开场白
+  pendingModuleAdvance Boolean @default(false)
   messages           Message[]
   seedJobs           SeedJob[]
 
