@@ -54,7 +54,7 @@ export function buildExportMarkdown(session: Session & { messages: Message[] }):
     lines.push(``);
     const msgs = byModule.get(modId) ?? [];
     for (const msg of msgs) {
-      const who = msg.role === "user" ? "受访者" : "小灵";
+      const who = msg.role === "user" ? "受访者" : "stone";
       lines.push(`**${who}**`);
       lines.push(``);
       lines.push(msg.content);

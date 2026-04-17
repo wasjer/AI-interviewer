@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "小灵 · AI 访谈",
+  title: "stone · AI 访谈",
   description: "本地 AI 访谈助手，支持导出 Markdown",
 };
 
