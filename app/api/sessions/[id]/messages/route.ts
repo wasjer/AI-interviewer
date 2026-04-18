@@ -114,7 +114,37 @@ export async function POST(req: Request, ctx: RouteCtx) {
     }
 
     const { cleaned: wrapUpText } = stripControlMarkers(wrapUpRaw);
+    const wrapUpStillAsking = /？/.test(wrapUpText);
+    const attempts = session.pendingAdvanceAttempts;
+    const shouldRetry = wrapUpStillAsking && attempts < 2;
 
+    if (shouldRetry) {
+      // LLM 违规又问了新问题；只保存承接回应，保持 pending，等用户再答一轮
+      await prisma.$transaction(async (tx) => {
+        await tx.message.create({
+          data: { sessionId: id, role: "assistant", content: wrapUpText, moduleId: currentModuleId },
+        });
+        await tx.session.update({
+          where: { id },
+          data: {
+            pendingAdvanceAttempts: attempts + 1,
+            totalUserTurns: newTotalTurns,
+          },
+        });
+      });
+
+      const sessionOut = await prisma.session.findFirst({
+        where: { id, userId: user.id },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+
+      return NextResponse.json({
+        assistantMessages: [{ content: wrapUpText, moduleId: currentModuleId }],
+        session: sessionOut,
+      });
+    }
+
+    // LLM 正常收尾 或 已重试 2 次强制推进
     await prisma.$transaction(async (tx) => {
       await tx.message.create({
         data: { sessionId: id, role: "assistant", content: wrapUpText, moduleId: currentModuleId },
@@ -128,6 +158,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
           modulePhaseIndex: newPhaseIndex,
           followUpsInModule: 0,
           pendingModuleAdvance: false,
+          pendingAdvanceAttempts: 0,
           totalUserTurns: newTotalTurns,
         },
       });
@@ -305,6 +336,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
         followUpsInModule,
         status,
         pendingModuleAdvance,
+        // 刚进入 pending 或刚清除 pending 时都重置重试计数
+        pendingAdvanceAttempts: 0,
         totalUserTurns: newTotalTurns,
         // 若本轮触发了反馈收集，设置等待标志
         feedbackPending: shouldAskFeedback ? true : session.feedbackPending,

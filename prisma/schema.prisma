@@ -36,6 +36,8 @@ model Session {
   status             String    @default("IN_PROGRESS")
   /// AI 已输出 [[NEXT_MODULE]] 但等待用户下一条消息后再展示下一模块开场白
   pendingModuleAdvance Boolean @default(false)
+  /// pending 分支已重试次数（LLM 在承接回应里仍违规问新问题时递增；满 2 次强制推进，防止死循环）
+  pendingAdvanceAttempts Int   @default(0)
   /// 用户累计提交次数（每次点「提交回答」+1）
   totalUserTurns       Int     @default(0)
   /// 正在等待用户回复满意度反馈

@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-04-18
+
+### [14] 修复 pending 分支里 LLM 违规仍会推送开场白的问题
+
+**问题回溯**：[1] 号修复只守住了「正常流程」：AI 在最后一轮同时输出问题 + `[[NEXT_MODULE]]` 时，检测到问号就延迟推进。但**延迟分支自身存在同源漏洞**——用户答完后，pending 路径会再调一次 LLM 生成承接回应，**无条件**追加下一模块开场白。当 LLM 忽略「不要再问新问题」的提示、在承接里又抛出新问题时，用户就看到两条背靠背：AI 的新问题 + 下一模块开场白，bug 以同样的形式复现。
+
+**证据**：2026-04-17 那次访谈（session `cmo2c2a5`），模块 5→4 和 4→1 两次切换都命中这条路径：承接回应里含全角 `？`，但推进照常发生。正常流程的 `/？/` 检测本身正常（hex 验证过 U+FF1F + node 直接跑 regex 通过）。
+
+**改动目标**：给 pending 分支加对称的 `？` 检测和有限重试兜底。
+
+**涉及文件**：
+| 文件 | 改动说明 |
+|------|----------|
+| `prisma/schema.prisma` | `Session` 表新增 `pendingAdvanceAttempts Int @default(0)` |
+| `prisma/migrations/20260418054851_add_pending_advance_attempts/migration.sql` | 自动生成的迁移文件 |
+| `app/api/sessions/[id]/messages/route.ts` | pending 分支：承接回应也跑 `/？/` 检测；仍含问号且重试次数 <2 时只保存回应、attempts+1、保持 pending；满 2 次强制推进并重置 attempts。正常流程 tx 里同步重置 attempts=0 |
+
+**行为总结**：
+- LLM 首次就合规 → 推 opener，attempts 保持 0（路径：答完 → 承接 → opener）
+- LLM 违规 1 次 → 保存承接，保持 pending，attempts=1，等用户再答
+- LLM 违规 2 次 → 保存承接，保持 pending，attempts=2
+- 第 3 次不论合规与否 → 强制推 opener，清 pending，重置 attempts（接受极端情况下 bug 有限重现，但保证不卡死）
+
+**回溯方法**：
+- 删除 schema 中 `pendingAdvanceAttempts` 字段，执行 `npx prisma migrate dev --name remove_pending_advance_attempts`
+- `messages/route.ts`：删除 pending 分支里 `wrapUpStillAsking` / `shouldRetry` 逻辑及 `if (shouldRetry) { ... }` 块，恢复为无条件推进；删除正常流程 tx 里的 `pendingAdvanceAttempts: 0`
+
+---
+
 ## 2026-04-17
 
 ### [13] 用户中途想停止时不再误推进模块
